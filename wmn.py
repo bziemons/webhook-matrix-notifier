@@ -37,7 +37,8 @@ def notify():
             return sorted(commits, key=lambda commit: commit["timestamp"])
 
         def extract_commit_message(commit):
-            return next(commit["message"].splitlines(keepends=False), "$EMPTY_COMMIT_MESSAGE - impossibruh").strip()
+            return next(iter(commit["message"].splitlines(keepends=False)),
+                        "$EMPTY_COMMIT_MESSAGE - impossibruh").strip()
 
         username = request.json["user_name"]
         commit_messages = list(map(extract_commit_message, sort_commits_by_time(request.json["commits"])))
