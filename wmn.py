@@ -17,7 +17,7 @@ with open("config.yml", 'r') as ymlfile:
     cfg = yaml.safe_load(ymlfile)
 
 
-@application.route('/matrix', options=("HEAD", "POST"))
+@application.route('/matrix', methods=['POST'])
 def notify():
     channel = request.args.get('channel')
     if channel is None or len(channel) == 0:
