@@ -4,6 +4,15 @@ from matrix_client.client import MatrixClient
 
 app = Flask(__name__)
 
+"""
+config.yml Example:
+
+secret: "..."
+matrix:
+  server: matrix.org
+  username: ...
+  password: "..."
+"""
 with open("config.yml", 'r') as ymlfile:
     cfg = yaml.safe_load(ymlfile)
 
