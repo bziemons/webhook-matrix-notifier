@@ -2,7 +2,7 @@ import yaml
 from flask import Flask, request, abort
 from matrix_client.client import MatrixClient
 
-app = Flask(__name__)
+application = Flask(__name__)
 
 """
 config.yml Example:
@@ -17,7 +17,7 @@ with open("config.yml", 'r') as ymlfile:
     cfg = yaml.safe_load(ymlfile)
 
 
-@app.route('/matrix')
+@application.route('/matrix')
 def notify():
     channel = request.args.get('channel')
     if channel is None or len(channel) == 0:
