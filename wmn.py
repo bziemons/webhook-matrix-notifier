@@ -33,13 +33,20 @@ def notify():
 
         room = client.join_room(room_id_or_alias=channel)
 
+        def sort_commits_by_time(commits):
+            return sorted(commits, key=lambda commit: commit["timestamp"])
+
+        def extract_commit_message(commit):
+            return next(commit["message"].splitlines(keepends=False), "$EMPTY_COMMIT_MESSAGE - impossibruh").strip()
+
         username = request.json["user_name"]
-        commit_count = len(request.json["commits"])
+        commit_messages = list(map(extract_commit_message, sort_commits_by_time(request.json["commits"])))
         project_name = request.json["project"]["name"]
-        room.send_html(f"<strong>{username} pushed {commit_count} commits to {project_name}</strong><br>\n"
-                       "<ul>\n" + "\n".join((f"{commit['message']}" for commit in request.json["commits"])) + "</ul>\n",
-                       body=f"{username} pushed {commit_count} commits to {project_name}\n"
-                       "" + "\n".join((f"- {commit['message']}" for commit in request.json["commits"])) + "\n",
+        html_commits = "\n".join((f"  <li>{msg}</li>" for msg in commit_messages))
+        text_commits = "\n".join((f"- {msg}" for msg in commit_messages))
+        room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits to {project_name}</strong><br>\n"
+                       f"<ul>\n{html_commits}\n</ul>\n",
+                       body=f"{username} pushed {len(commit_messages)} commits to {project_name}\n{text_commits}\n",
                        msgtype="m.notice")
 
     return ""
