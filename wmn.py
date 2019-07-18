@@ -9,7 +9,7 @@ config.yml Example:
 
 secret: "..."
 matrix:
-  server: matrix.org
+  server: https://matrix.org
   username: ...
   password: "..."
 """
