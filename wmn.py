@@ -126,11 +126,11 @@ def process_jenkins_request():
         html_changes = "\n".join((f"  <li>{msg}</li>" for msg in change_messages))
         text_changes = "\n".join((f"- {msg}" for msg in change_messages))
         try:
-            room.send_html(f"<strong>{build_name} completed on project {project_name} with result "
-                           f"<span color=\"{result_color}\">{result_type}</span>, "
+            room.send_html(f"<strong>Build {build_name} completed on project {project_name} with result "
+                           f"<span style=\"color:{result_color}\">{result_type}</span>, "
                            f"{len(change_messages)} commits</strong><br>\n"
                            f"<ul>\n{html_changes}\n</ul>\n",
-                           body=f"{build_name} completed on project {project_name} with result {result_type}\n"
+                           body=f"Build {build_name} completed on project {project_name} with result {result_type}\n"
                            f"{text_changes}\n",
                            msgtype="m.notice")
         except MatrixRequestError as e:
