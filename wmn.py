@@ -1,3 +1,4 @@
+import json
 import re
 
 import yaml
@@ -40,6 +41,22 @@ def get_a_room():
     return room
 
 
+def iter_first_line(string: str):
+    return iter(map(str.rstrip, string.lstrip().splitlines(keepends=False)))
+
+
+def shorten(string: str, max_len: int = 80, appendix: str = "..."):
+    if len(string) > max_len:
+        return string[:max_len - len(appendix)] + appendix
+    else:
+        return string
+
+
+def matrix_error(error: MatrixRequestError):
+    # see Flask.make_response, this will be interpreted as (body, status)
+    return f"Error from Matrix: {error.content}", error.code
+
+
 def process_gitlab_request():
     check_token('X-Gitlab-Token')
     room = get_a_room()
@@ -52,25 +69,26 @@ def process_gitlab_request():
 
             room = client.join_room(room_id_or_alias=room)
         except MatrixRequestError as e:
-            # see Flask.make_response, this is interpreted as (body, status)
-            return f"Error from Matrix: {e.content}", e.code
+            return matrix_error(e)
 
         def sort_commits_by_time(commits):
             return sorted(commits, key=lambda commit: commit["timestamp"])
 
         def extract_commit_message(commit):
-            return next(iter(commit["message"].lstrip().splitlines(keepends=False)),
-                        "$EMPTY_COMMIT_MESSAGE - impossibruh").rstrip()
+            return shorten(next(iter_first_line(commit["message"]), "$EMPTY_COMMIT_MESSAGE - impossibruh"))
 
         username = request.json["user_name"]
         commit_messages = list(map(extract_commit_message, sort_commits_by_time(request.json["commits"])))
         project_name = request.json["project"]["name"]
         html_commits = "\n".join((f"  <li>{msg}</li>" for msg in commit_messages))
         text_commits = "\n".join((f"- {msg}" for msg in commit_messages))
-        room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits to {project_name}</strong><br>\n"
-                       f"<ul>\n{html_commits}\n</ul>\n",
-                       body=f"{username} pushed {len(commit_messages)} commits to {project_name}\n{text_commits}\n",
-                       msgtype="m.notice")
+        try:
+            room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits to {project_name}</strong><br>\n"
+                           f"<ul>\n{html_commits}\n</ul>\n",
+                           body=f"{username} pushed {len(commit_messages)} commits to {project_name}\n{text_commits}\n",
+                           msgtype="m.notice")
+        except MatrixRequestError as e:
+            return matrix_error(e)
 
     # see Flask.make_response, this is interpreted as (body, status)
     return "", 204
@@ -78,10 +96,45 @@ def process_gitlab_request():
 
 def process_jenkins_request():
     check_token('X-Jenkins-Token')
-    # room = get_a_room()
+    room = get_a_room()
+    jenkins_event = request.headers.get("X-Jenkins-Event")
 
-    from pprint import pprint
-    pprint(request.json)
+    if jenkins_event == "Post Build Hook":
+        try:
+            client = MatrixClient(cfg["matrix"]["server"])
+            client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
+
+            room = client.join_room(room_id_or_alias=room)
+        except MatrixRequestError as e:
+            return matrix_error(e)
+
+        def extract_change_message(change):
+            change_message = next(iter_first_line(change["message"]), "")
+            if len(change_message) > 0:
+                return f"{shorten(change_message)} " \
+                    f"({shorten(change['commitId'], 7, appendix='')}) " \
+                    f"by {change['author']} " \
+                    f"at {change['timestamp']}"
+            else:
+                return shorten(json.dumps(change), appendix="...}")
+
+        build_name = request.json["displayName"]
+        project_name = request.json["project"]["fullDisplayName"]
+        result_type = request.json["result"]["type"]
+        result_color = request.json["result"]["color"]
+        change_messages = list(map(extract_change_message, request.json["changes"]))
+        html_changes = "\n".join((f"  <li>{msg}</li>" for msg in change_messages))
+        text_changes = "\n".join((f"- {msg}" for msg in change_messages))
+        try:
+            room.send_html(f"<strong>{build_name} completed on project {project_name} with result "
+                           f"<span color=\"{result_color}\">{result_type}</span>, "
+                           f"{len(change_messages)} commits</strong><br>\n"
+                           f"<ul>\n{html_changes}\n</ul>\n",
+                           body=f"{build_name} completed on project {project_name} with result {result_type}\n"
+                           f"{text_changes}\n",
+                           msgtype="m.notice")
+        except MatrixRequestError as e:
+            return matrix_error(e)
 
     # see Flask.make_response, this is interpreted as (body, status)
     return "", 204
