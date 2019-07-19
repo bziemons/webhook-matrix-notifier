@@ -1,6 +1,7 @@
 import yaml
 from flask import Flask, request, abort
 from matrix_client.client import MatrixClient
+from matrix_client.errors import MatrixRequestError
 
 application = Flask(__name__)
 
@@ -17,28 +18,30 @@ with open("config.yml", 'r') as ymlfile:
     cfg = yaml.safe_load(ymlfile)
 
 
-@application.route('/matrix', methods=("POST",))
-def notify():
+def process_gitlab_request():
+    gitlab_token = request.headers.get('X-Gitlab-Token')
+    if gitlab_token != cfg['secret']:
+        abort(403)
     channel = request.args.get('channel')
     if channel is None or len(channel) == 0:
-        abort(401)
-    gitlab_token = request.headers.get('X-Gitlab-Token')
-    if gitlab_token is None or len(gitlab_token) == 0 or gitlab_token != cfg['secret']:
-        abort(403)
+        abort(400)
     gitlab_event = request.headers.get("X-Gitlab-Event")
 
     if gitlab_event == "Push Hook":
-        client = MatrixClient(cfg["matrix"]["server"])
-        client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
+        try:
+            client = MatrixClient(cfg["matrix"]["server"])
+            client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
 
-        room = client.join_room(room_id_or_alias=channel)
+            room = client.join_room(room_id_or_alias=channel)
+        except MatrixRequestError as e:
+            return f"Error from Matrix: {e.content}", e.code
 
         def sort_commits_by_time(commits):
             return sorted(commits, key=lambda commit: commit["timestamp"])
 
         def extract_commit_message(commit):
-            return next(iter(commit["message"].splitlines(keepends=False)),
-                        "$EMPTY_COMMIT_MESSAGE - impossibruh").strip()
+            return next(iter(commit["message"].lstrip().splitlines(keepends=False)),
+                        "$EMPTY_COMMIT_MESSAGE - impossibruh").rstrip()
 
         username = request.json["user_name"]
         commit_messages = list(map(extract_commit_message, sort_commits_by_time(request.json["commits"])))
@@ -52,3 +55,28 @@ def notify():
 
     # see Flask.make_response, this is interpreted as (body, status)
     return "", 204
+
+
+def process_jenkins_request():
+    jenkins_token = request.headers.get('X-Jenkins-Token')
+    if jenkins_token != cfg['secret']:
+        abort(403)
+    channel = request.args.get('channel')
+    if channel is None or len(channel) == 0:
+        abort(400)
+
+    from pprint import pprint
+    pprint(request.json)
+
+    # see Flask.make_response, this is interpreted as (body, status)
+    return "", 204
+
+
+@application.route('/matrix', methods=("POST",))
+def notify():
+    if 'X-Gitlab-Token' in request.headers:
+        return process_gitlab_request()
+    elif 'X-Jenkins-Token' in request.headers:
+        return process_jenkins_request()
+    else:
+        return "Cannot determine the request's webhook cause", 400
