@@ -1,9 +1,15 @@
+import re
+
 import yaml
 from flask import Flask, request, abort
 from matrix_client.client import MatrixClient
 from matrix_client.errors import MatrixRequestError
 
 application = Flask(__name__)
+
+# Not going to care for specifics like the underscore.
+# Generally match !anything:example.com with unicode support.
+room_pattern = re.compile(r'^!\w+:[\w\-.]+$')
 
 """
 config.yml Example:
@@ -18,13 +24,25 @@ with open("config.yml", 'r') as ymlfile:
     cfg = yaml.safe_load(ymlfile)
 
 
-def process_gitlab_request():
-    gitlab_token = request.headers.get('X-Gitlab-Token')
-    if gitlab_token != cfg['secret']:
-        abort(403)
-    channel = request.args.get('channel')
-    if channel is None or len(channel) == 0:
+def check_token(header_field: str):
+    token = request.headers.get(header_field)
+    if token != cfg['secret']:
+        abort(401)
+
+
+def get_a_room():
+    if 'channel' not in request.args:
         abort(400)
+    room = request.args.get('channel')
+    # sanitize input
+    if room_pattern.fullmatch(room) is None:
+        abort(400)
+    return room
+
+
+def process_gitlab_request():
+    check_token('X-Gitlab-Token')
+    room = get_a_room()
     gitlab_event = request.headers.get("X-Gitlab-Event")
 
     if gitlab_event == "Push Hook":
@@ -32,8 +50,9 @@ def process_gitlab_request():
             client = MatrixClient(cfg["matrix"]["server"])
             client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
 
-            room = client.join_room(room_id_or_alias=channel)
+            room = client.join_room(room_id_or_alias=room)
         except MatrixRequestError as e:
+            # see Flask.make_response, this is interpreted as (body, status)
             return f"Error from Matrix: {e.content}", e.code
 
         def sort_commits_by_time(commits):
@@ -58,12 +77,8 @@ def process_gitlab_request():
 
 
 def process_jenkins_request():
-    jenkins_token = request.headers.get('X-Jenkins-Token')
-    if jenkins_token != cfg['secret']:
-        abort(403)
-    channel = request.args.get('channel')
-    if channel is None or len(channel) == 0:
-        abort(400)
+    check_token('X-Jenkins-Token')
+    # room = get_a_room()
 
     from pprint import pprint
     pprint(request.json)
