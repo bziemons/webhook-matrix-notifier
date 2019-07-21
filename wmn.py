@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import datetime
 
 import yaml
 from flask import Flask, request, abort
@@ -95,6 +96,9 @@ def process_gitlab_request():
 
 
 def process_jenkins_request():
+    # TODO: make switching message types possible
+    # msgtype = "m.notice"
+    msgtype = "m.text"
     check_token('X-Jenkins-Token')
     room = get_a_room()
     jenkins_event = request.headers.get("X-Jenkins-Event")
@@ -111,10 +115,11 @@ def process_jenkins_request():
         def extract_change_message(change):
             change_message = next(iter_first_line(change["message"]), "")
             if len(change_message) > 0:
+                htimestamp = datetime.fromtimestamp(change['timestamp'] / 1000).strftime("%d. %b %y %H:%M")
                 return f"{shorten(change_message)} " \
                     f"({shorten(change['commitId'], 7, appendix='')}) " \
                     f"by {change['author']} " \
-                    f"at {change['timestamp']}"
+                    f"at {htimestamp}"
             else:
                 return shorten(json.dumps(change), appendix="...}")
 
@@ -133,7 +138,7 @@ def process_jenkins_request():
                            body=f"**Build {build_name} on project {project_name} complete: {result_type}**, "
                            f"{len(change_messages)} commits\n"
                            "" + (f"{text_changes}\n" if len(change_messages) > 0 else ""),
-                           msgtype="m.notice")
+                           msgtype=msgtype)
         except MatrixRequestError as e:
             return matrix_error(e)
 
