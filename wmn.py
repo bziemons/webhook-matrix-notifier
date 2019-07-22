@@ -141,7 +141,7 @@ def process_jenkins_request():
         text_changes = "\n".join((f"- {msg}" for msg in change_messages))
         try:
             room.send_html(f"<p><strong>Build {build_name} on project {project_name} complete: "
-                           f"<span style=\"color:{result_color}\">{result_type}</span></strong>, "
+                           f"<font color=\"{result_color}\">{result_type}</font></strong>, "
                            f"{len(change_messages)} commits</p>\n"
                            "" + (f"<ul>\n{html_changes}\n</ul>\n" if len(change_messages) > 0 else ""),
                            body=f"**Build {build_name} on project {project_name} complete: {result_type}**, "
