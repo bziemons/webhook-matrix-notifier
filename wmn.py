@@ -42,6 +42,16 @@ def get_a_room():
     return room
 
 
+def get_msg_type():
+    if 'msgtype' not in request.args:
+        return "m.notice"
+    msgtype = request.args.get('channel')
+    if msgtype in ["m.text", "m.notice"]:
+        return msgtype
+    else:
+        abort(400)
+
+
 def iter_first_line(string: str):
     return iter(map(str.rstrip, string.lstrip().splitlines(keepends=False)))
 
@@ -60,6 +70,7 @@ def matrix_error(error: MatrixRequestError):
 
 def process_gitlab_request():
     check_token('X-Gitlab-Token')
+    msgtype = get_msg_type()
     room = get_a_room()
     gitlab_event = request.headers.get("X-Gitlab-Event")
 
@@ -87,7 +98,7 @@ def process_gitlab_request():
             room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits to {project_name}</strong><br>\n"
                            f"<ul>\n{html_commits}\n</ul>\n",
                            body=f"{username} pushed {len(commit_messages)} commits to {project_name}\n{text_commits}\n",
-                           msgtype="m.notice")
+                           msgtype=msgtype)
         except MatrixRequestError as e:
             return matrix_error(e)
 
@@ -96,10 +107,8 @@ def process_gitlab_request():
 
 
 def process_jenkins_request():
-    # TODO: make switching message types possible
-    # msgtype = "m.notice"
-    msgtype = "m.text"
     check_token('X-Jenkins-Token')
+    msgtype = get_msg_type()
     room = get_a_room()
     jenkins_event = request.headers.get("X-Jenkins-Event")
 
