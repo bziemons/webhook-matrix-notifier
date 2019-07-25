@@ -45,7 +45,7 @@ def get_a_room():
 def get_msg_type():
     if 'msgtype' not in request.args:
         return "m.notice"
-    msgtype = request.args.get('channel')
+    msgtype = request.args.get('msgtype')
     if msgtype in ["m.text", "m.notice"]:
         return msgtype
     else:
