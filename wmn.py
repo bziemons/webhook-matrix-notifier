@@ -86,7 +86,7 @@ def process_gitlab_request():
         def sort_commits_by_time(commits):
             return sorted(commits, key=lambda commit: commit["timestamp"])
 
-        def extract_commit_message(commit):
+        def extract_commit_info(commit):
             msg = shorten(next(iter_first_line(commit["message"]), "$EMPTY_COMMIT_MESSAGE - impossibruh"))
             url = commit["url"]
             return msg, url
