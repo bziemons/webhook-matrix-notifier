@@ -86,14 +86,16 @@ def process_gitlab_request():
         def sort_commits_by_time(commits):
             return sorted(commits, key=lambda commit: commit["timestamp"])
 
-        def extract_commit_message(commit):
-            return shorten(next(iter_first_line(commit["message"]), "$EMPTY_COMMIT_MESSAGE - impossibruh"))
+        def extract_commit_info(commit):
+            msg = shorten(next(iter_first_line(commit["message"]), "$EMPTY_COMMIT_MESSAGE - impossibruh"))
+            url = commit["url"]
+            return msg, url
 
         username = request.json["user_name"]
         commit_messages = list(map(extract_commit_message, sort_commits_by_time(request.json["commits"])))
         project_name = request.json["project"]["name"]
-        html_commits = "\n".join((f"  <li>{msg}</li>" for msg in commit_messages))
-        text_commits = "\n".join((f"- {msg}" for msg in commit_messages))
+        html_commits = "\n".join((f'  <li><a href="{url}">{msg}</a></li>' for (msg, url) in commit_messages))
+        text_commits = "\n".join((f"- [{msg}]({url})" for (msg, url) in commit_messages))
         try:
             room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits to {project_name}</strong><br>\n"
                            f"<ul>\n{html_commits}\n</ul>\n",
