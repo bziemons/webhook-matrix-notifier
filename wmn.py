@@ -92,7 +92,7 @@ def process_gitlab_request():
             return msg, url
 
         username = request.json["user_name"]
-        commit_messages = list(map(extract_commit_message, sort_commits_by_time(request.json["commits"])))
+        commit_messages = list(map(extract_commit_info, sort_commits_by_time(request.json["commits"])))
         project_name = request.json["project"]["name"]
         html_commits = "\n".join((f'  <li><a href="{url}">{msg}</a></li>' for (msg, url) in commit_messages))
         text_commits = "\n".join((f"- [{msg}]({url})" for (msg, url) in commit_messages))
