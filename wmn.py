@@ -75,6 +75,9 @@ def process_gitlab_request():
     gitlab_event = request.headers.get("X-Gitlab-Event")
 
     if gitlab_event == "Push Hook":
+        if request.json["total_commits_count"] < 1:
+            return "", 204
+
         try:
             client = MatrixClient(cfg["matrix"]["server"])
             client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
@@ -92,14 +95,19 @@ def process_gitlab_request():
             return msg, url
 
         username = request.json["user_name"]
-        commit_messages = list(map(extract_commit_info, sort_commits_by_time(request.json["commits"])))
         project_name = request.json["project"]["name"]
+        if request.json["ref"].startswith("refs/heads/"):
+            to_str = f" to branch {request.json['ref'][len('refs/heads/'):]} on project {project_name}"
+        else:
+            to_str = f" to {project_name}"
+
+        commit_messages = list(map(extract_commit_info, sort_commits_by_time(request.json["commits"])))
         html_commits = "\n".join((f'  <li><a href="{url}">{msg}</a></li>' for (msg, url) in commit_messages))
         text_commits = "\n".join((f"- [{msg}]({url})" for (msg, url) in commit_messages))
         try:
-            room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits to {project_name}</strong><br>\n"
+            room.send_html(f"<strong>{username} pushed {len(commit_messages)} commits{to_str}</strong><br>\n"
                            f"<ul>\n{html_commits}\n</ul>\n",
-                           body=f"{username} pushed {len(commit_messages)} commits to {project_name}\n{text_commits}\n",
+                           body=f"{username} pushed {len(commit_messages)} commits{to_str}\n{text_commits}\n",
                            msgtype=msgtype)
         except MatrixRequestError as e:
             return matrix_error(e)
