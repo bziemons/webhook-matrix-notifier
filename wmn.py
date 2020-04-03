@@ -13,8 +13,8 @@ from matrix_client.errors import MatrixRequestError
 application = Flask(__name__)
 
 # Not going to care for specifics like the underscore.
-# Generally match !anything:example.com with unicode support.
-room_pattern = re.compile(r'^!\w+:[\w\-.]+$')
+# Generally match room alias or id [!#]anything:example.com with unicode support.
+room_pattern = re.compile(r'^[!#]\w+:[\w\-.]+$')
 
 """
 config.yml Example:
