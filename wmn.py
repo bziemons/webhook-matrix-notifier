@@ -1,5 +1,8 @@
 import json
 import re
+import sys
+import traceback
+import typing
 from datetime import datetime
 
 import yaml
@@ -136,9 +139,9 @@ def process_jenkins_request():
             if len(change_message) > 0:
                 htimestamp = datetime.fromtimestamp(change['timestamp'] / 1000).strftime("%d. %b %y %H:%M")
                 return f"{shorten(change_message)} " \
-                    f"({shorten(change['commitId'], 7, appendix='')}) " \
-                    f"by {change['author']} " \
-                    f"at {htimestamp}"
+                       f"({shorten(change['commitId'], 7, appendix='')}) " \
+                       f"by {change['author']} " \
+                       f"at {htimestamp}"
             else:
                 return shorten(json.dumps(change), appendix="...}")
 
@@ -155,11 +158,94 @@ def process_jenkins_request():
                            f"{len(change_messages)} commits</p>\n"
                            "" + (f"<ul>\n{html_changes}\n</ul>\n" if len(change_messages) > 0 else ""),
                            body=f"**Build {build_name} on project {project_name} complete: {result_type}**, "
-                           f"{len(change_messages)} commits\n"
-                           "" + (f"{text_changes}\n" if len(change_messages) > 0 else ""),
+                                f"{len(change_messages)} commits\n"
+                                "" + (f"{text_changes}\n" if len(change_messages) > 0 else ""),
                            msgtype=msgtype)
         except MatrixRequestError as e:
             return matrix_error(e)
+
+    # see Flask.make_response, this is interpreted as (body, status)
+    return "", 204
+
+
+def process_prometheus_request():
+    secret = request.args.get('secret')
+    if secret != cfg['secret']:
+        abort(401)
+
+    msgtype = get_msg_type()
+    room = get_a_room()
+
+    # written for version 4 of the alertmanager webhook JSON
+    # https://prometheus.io/docs/alerting/configuration/#webhook_config
+
+    def color_status_html(status: str, text: typing.Optional[str] = None):
+        _status_colors = {"resolved": "34A91D", "firing": "EF2929"}
+        if text is None:
+            text = status
+        if status in _status_colors:
+            return f'<font color="#{_status_colors[status]}">{text}</font>'
+        else:
+            return text
+
+    def extract_alert_message(alert: typing.Dict[str, typing.Any]) -> typing.Tuple[str, str]:
+        """Takes the alert object and returns (text, html) as a string tuple."""
+
+        alert_status = alert.get("status", "None")
+        alert_labels = str(alert.get("labels", None))
+        alert_annotations = str(alert.get("annotations", None))
+        alert_start = alert.get("startsAt", None)
+        alert_end = alert.get("endsAt", None)
+        alert_daterange = []
+        if alert_start is not None:
+            alert_start = datetime.fromisoformat(alert_start).strftime("%d. %b %y %H:%M %Z").rstrip()
+            alert_daterange.append(f'Started at {alert_start}')
+        if alert_end is not None:
+            alert_end = datetime.fromisoformat(alert_end).strftime("%d. %b %y %H:%M %Z").rstrip()
+            alert_daterange.append(f'Ended at {alert_end}')
+        alert_daterange = "" if len(alert_daterange) == 0 else f'({", ".join(alert_daterange)})'
+        alert_generator_url = alert.get("generatorURL", "None")
+
+        return (
+            f'[{alert_status}] Labels: {alert_labels}, Annotations: {alert_annotations} - {alert_daterange} | Generator: {alert_generator_url}',
+            f'<strong>{color_status_html(alert_status)}</strong> Labels: {alert_labels}, Annotations: {alert_annotations} - {alert_daterange} | Generator: {alert_generator_url}',
+        )
+
+    def extract_prometheus_message() -> typing.Tuple[str, str]:
+        """Dissects the request's JSON and returns (text, html) as a string tuple."""
+
+        group_key = request.json.get("groupKey", "None")
+        status = request.json.get("status", "None")
+        receiver = request.json.get("receiver", "None")
+        group_labels = str(request.json.get("groupLabels", None))
+        common_labels = str(request.json.get("commonLabels", None))
+        common_annotations = str(request.json.get("commonAnnotations", None))
+        ext_url = request.json.get("externalURL", "None")
+        alerts = request.json.get("alerts", [])  # type: typing.List[typing.Dict[str, typing.Any]]
+
+        text_alerts, html_alerts = zip(*map(extract_alert_message, alerts))
+        text_alerts = "\n" + "\n".join((f"- {msg}" for msg in text_alerts))
+        html_alerts = "<br>\n<ul>\n" + "\n".join((f"  <li>{msg}</li>" for msg in html_alerts)) + "\n</ul>"
+
+        return (
+            f'*{status.title()} alert for group {group_key}*\n  Receiver: {receiver}\n  Labels: {group_labels} | {common_labels}\n  Annotations: {common_annotations}\n  External URL: {ext_url}\nAlerts:{text_alerts}',
+            f'<strong>{color_status_html(status, f"{status.title()} alert for group {group_key}")}</strong><br>\n  <em>Receiver:</em> {receiver}<br>\n  <em>Labels:</em> {group_labels} | {common_labels}<br>\n  <em>Annotations:</em> {common_annotations}<br>\n  <em>External URL:</em> {ext_url}<br>\n<em>Alerts:</em>{html_alerts}',
+        )
+
+    try:
+        html, body = extract_prometheus_message()
+    except (LookupError, ValueError, TypeError):
+        print("Error parsing JSON and forming message:", file=sys.stderr)
+        traceback.print_exc()
+        return "Error parsing JSON and forming message", 500
+
+    try:
+        client = MatrixClient(cfg["matrix"]["server"])
+        client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
+        room = client.join_room(room_id_or_alias=room)
+        room.send_html(html=html, body=body, msgtype=msgtype)
+    except MatrixRequestError as e:
+        return matrix_error(e)
 
     # see Flask.make_response, this is interpreted as (body, status)
     return "", 204
@@ -171,5 +257,7 @@ def notify():
         return process_gitlab_request()
     elif 'X-Jenkins-Token' in request.headers:
         return process_jenkins_request()
+    elif 'type' in request.args and request.args.get('type') == "prometheus":
+        return process_prometheus_request()
     else:
         return "Cannot determine the request's webhook cause", 400
