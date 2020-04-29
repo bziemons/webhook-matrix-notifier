@@ -134,32 +134,36 @@ def process_jenkins_request():
         except MatrixRequestError as e:
             return matrix_error(e)
 
+        project_url = request.json["githubProjectUrl"]
+
         def extract_change_message(change):
             change_message = next(iter_first_line(change["message"]), "")
             if len(change_message) > 0:
                 htimestamp = datetime.fromtimestamp(change['timestamp'] / 1000).strftime("%d. %b %y %H:%M")
-                return f"{shorten(change_message)} " \
-                       f"({shorten(change['commitId'], 7, appendix='')}) " \
-                       f"by {change['author']} " \
-                       f"at {htimestamp}"
+                bare_commit_link = f"({shorten(change['commitId'], 7, appendix='')})"
+                if project_url is not None and project_url:
+                    commit_link = f"<a href=\"{project_url}commit/{change['commitId']}\">{bare_commit_link}</a>"
+                else:
+                    commit_link = bare_commit_link
+                return (f"  <li>{shorten(change_message)} {commit_link} by {change['author']} at {htimestamp}</li>",
+                        f"- {shorten(change_message)} {bare_commit_link} by {change['author']} at {htimestamp}")
             else:
-                return shorten(json.dumps(change), appendix="...}")
+                return shorten(json.dumps(change).replace("<", "&"), appendix="...}")
 
         build_name = request.json["displayName"]
         project_name = request.json["project"]["fullDisplayName"]
         result_type = request.json["result"]["type"]
         result_color = request.json["result"]["color"]
-        change_messages = list(map(extract_change_message, request.json["changes"]))
-        html_changes = "\n".join((f"  <li>{msg}</li>" for msg in change_messages))
-        text_changes = "\n".join((f"- {msg}" for msg in change_messages))
+        html_change_messages, text_change_messages = map(extract_change_message, request.json['changes'])
+        newline = '\n'
         try:
             room.send_html(f"<p><strong>Build {build_name} on project {project_name} complete: "
                            f"<font color=\"{result_color}\">{result_type}</font></strong>, "
-                           f"{len(change_messages)} commits</p>\n"
-                           "" + (f"<ul>\n{html_changes}\n</ul>\n" if len(change_messages) > 0 else ""),
+                           f"{len(request.json['changes'])} commits</p>\n"
+                           "" + (f"<ul>\n{newline.join(html_change_messages)}\n</ul>\n" if len(request.json['changes']) > 0 else ""),
                            body=f"**Build {build_name} on project {project_name} complete: {result_type}**, "
-                                f"{len(change_messages)} commits\n"
-                                "" + (f"{text_changes}\n" if len(change_messages) > 0 else ""),
+                                f"{len(request.json['changes'])} commits\n"
+                                "" + (f"{newline.join(text_change_messages)}\n" if len(request.json['changes']) > 0 else ""),
                            msgtype=msgtype)
         except MatrixRequestError as e:
             return matrix_error(e)
