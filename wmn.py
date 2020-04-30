@@ -145,8 +145,10 @@ def process_jenkins_request():
                     commit_link = f"<a href=\"{project_url}commit/{change['commitId']}\">{bare_commit_link}</a>"
                 else:
                     commit_link = bare_commit_link
-                return (f"  <li>{shorten(change_message)} {commit_link} by {change['author']} at {htimestamp}</li>",
-                        f"- {shorten(change_message)} {bare_commit_link} by {change['author']} at {htimestamp}")
+                return (
+                    f"- {shorten(change_message)} {bare_commit_link} by {change['author']} at {htimestamp}",
+                    f"  <li>{shorten(change_message)} {commit_link} by {change['author']} at {htimestamp}</li>",
+                )
             else:
                 return shorten(json.dumps(change).replace("<", "&"), appendix="...}")
 
@@ -154,7 +156,7 @@ def process_jenkins_request():
         project_name = request.json["project"]["fullDisplayName"]
         result_type = request.json["result"]["type"]
         result_color = request.json["result"]["color"]
-        html_change_messages, text_change_messages = map(extract_change_message, request.json['changes'])
+        text_change_messages, html_change_messages = zip(*map(extract_change_message, request.json['changes']))
         newline = '\n'
         try:
             room.send_html(f"<p><strong>Build {build_name} on project {project_name} complete: "
