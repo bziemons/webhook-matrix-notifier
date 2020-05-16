@@ -150,22 +150,31 @@ def process_jenkins_request():
                     f"  <li>{shorten(change_message)} {commit_link} by {change['author']} at {htimestamp}</li>",
                 )
             else:
-                return shorten(json.dumps(change).replace("<", "&"), appendix="...}")
+                dump = shorten(json.dumps(change), appendix="...}")
+                return (
+                    dump,
+                    dump.replace("<", "&lt;").replace(">", "&gt;")
+                )
 
         build_name = request.json["displayName"]
         project_name = request.json["project"]["fullDisplayName"]
         result_type = request.json["result"]["type"]
         result_color = request.json["result"]["color"]
-        text_change_messages, html_change_messages = zip(*map(extract_change_message, request.json['changes']))
+        changes = request.json['changes']
+        if len(changes) > 0:
+            text_change_messages, html_change_messages = zip(*map(extract_change_message, changes))
+        else:
+            text_change_messages, html_change_messages = (), ()  # it's an owl!
+
         newline = '\n'
         try:
             room.send_html(f"<p><strong>Build {build_name} on project {project_name} complete: "
                            f"<font color=\"{result_color}\">{result_type}</font></strong>, "
-                           f"{len(request.json['changes'])} commits</p>\n"
-                           "" + (f"<ul>\n{newline.join(html_change_messages)}\n</ul>\n" if len(request.json['changes']) > 0 else ""),
+                           f"{len(changes)} commits</p>\n"
+                           "" + (f"<ul>\n{newline.join(html_change_messages)}\n</ul>\n" if len(html_change_messages) > 0 else ""),
                            body=f"**Build {build_name} on project {project_name} complete: {result_type}**, "
-                                f"{len(request.json['changes'])} commits\n"
-                                "" + (f"{newline.join(text_change_messages)}\n" if len(request.json['changes']) > 0 else ""),
+                                f"{len(changes)} commits\n"
+                                "" + (f"{newline.join(text_change_messages)}\n" if len(text_change_messages) > 0 else ""),
                            msgtype=msgtype)
         except MatrixRequestError as e:
             return matrix_error(e)
