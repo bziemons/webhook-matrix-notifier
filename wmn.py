@@ -220,7 +220,7 @@ def process_prometheus_request():
         if match is None:
             print('parse_promtime failed, because promtime', date_string, 'could not be parsed with pattern', promtime_to_isotime_pattern, file=sys.stderr, flush=True)
             abort(400)
-        grps = list(map(lambda x: x is not None, match.groups()))
+        grps = list(filter(lambda x: x is not None, match.groups()))
         if grps[-1] == 'Z':
             grps[-1] = '+00:00'
         return datetime.fromisoformat(''.join(grps))
