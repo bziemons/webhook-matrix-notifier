@@ -16,6 +16,10 @@ application = Flask(__name__)
 # Generally match room alias or id [!#]anything:example.com with unicode support.
 room_pattern = re.compile(r'^[!#]\w+:[\w\-.]+$')
 
+# prometheus has to many sub-second digits in their timestamp,
+# so we get rid of nanoseconds here
+promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6})(?:[0-9]{3})(Z)')
+
 """
 config.yml Example:
 
@@ -203,6 +207,12 @@ def process_prometheus_request():
         else:
             return text
 
+    def parse_promtime(date_string):
+        match = promtime_to_isotime_pattern.match(date_string)
+        if match is None:
+            abort(400, f'could not parse promtime "{date_string}" with pattern "{promtime_to_isotime_pattern}"')
+        return datetime.fromisoformat(''.join(match.groups()))
+
     def extract_alert_message(alert: typing.Dict[str, typing.Any]) -> typing.Tuple[str, str]:
         """Takes the alert object and returns (text, html) as a string tuple."""
 
@@ -213,10 +223,10 @@ def process_prometheus_request():
         alert_end = alert.get("endsAt", None)
         alert_daterange = []
         if alert_start is not None:
-            alert_start = datetime.fromisoformat(alert_start).strftime("%d. %b %y %H:%M %Z").rstrip()
+            alert_start = parse_promtime(alert_start).strftime("%d. %b %y %H:%M %Z").rstrip()
             alert_daterange.append(f'Started at {alert_start}')
         if alert_end is not None:
-            alert_end = datetime.fromisoformat(alert_end).strftime("%d. %b %y %H:%M %Z").rstrip()
+            alert_end = parse_promtime(alert_end).strftime("%d. %b %y %H:%M %Z").rstrip()
             alert_daterange.append(f'Ended at {alert_end}')
         alert_daterange = "" if len(alert_daterange) == 0 else f'({", ".join(alert_daterange)})'
         alert_generator_url = alert.get("generatorURL", "None")
