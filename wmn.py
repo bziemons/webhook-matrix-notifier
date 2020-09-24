@@ -18,7 +18,7 @@ room_pattern = re.compile(r'^[!#]\w+:[\w\-.]+$')
 
 # prometheus has to many sub-second digits in their timestamp,
 # so we get rid of nanoseconds here
-promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6})(?:[0-9]{3})(Z|[+-][0-9]{2}:[0-9]{2})')
+promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?)(?:[0-9]{3})?(Z|[+-][0-9]{2}:[0-9]{2})')
 
 """
 config.yml Example:
@@ -220,7 +220,7 @@ def process_prometheus_request():
         if match is None:
             print('parse_promtime failed, because promtime', date_string, 'could not be parsed with pattern', promtime_to_isotime_pattern, file=sys.stderr, flush=True)
             abort(400)
-        grps = list(match.groups())
+        grps = list(map(lambda x: x is not None, match.groups()))
         if grps[-1] == 'Z':
             grps[-1] = '+00:00'
         return datetime.fromisoformat(''.join(grps))
@@ -234,10 +234,10 @@ def process_prometheus_request():
         alert_start = alert.get("startsAt", None)
         alert_end = alert.get("endsAt", None)
         alert_daterange = []
-        if alert_start is not None:
+        if alert_start is not None and alert_end != '0001-01-01T00:00:00Z':
             alert_start = parse_promtime(alert_start).strftime("%d. %b %y %H:%M %Z").rstrip()
             alert_daterange.append(f'Started at {alert_start}')
-        if alert_end is not None:
+        if alert_end is not None and alert_end != '0001-01-01T00:00:00Z':
             alert_end = parse_promtime(alert_end).strftime("%d. %b %y %H:%M %Z").rstrip()
             alert_daterange.append(f'Ended at {alert_end}')
         alert_daterange = "" if len(alert_daterange) == 0 else f'({", ".join(alert_daterange)})'
