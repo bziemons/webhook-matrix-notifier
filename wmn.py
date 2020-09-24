@@ -18,7 +18,7 @@ room_pattern = re.compile(r'^[!#]\w+:[\w\-.]+$')
 
 # prometheus has to many sub-second digits in their timestamp,
 # so we get rid of nanoseconds here
-promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6})(?:[0-9]{3})(Z)')
+promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6})(?:[0-9]{3})(Z|[+-][0-9]{2}:[0-9]{2})')
 
 """
 config.yml Example:
@@ -211,7 +211,10 @@ def process_prometheus_request():
         match = promtime_to_isotime_pattern.match(date_string)
         if match is None:
             abort(400, f'could not parse promtime "{date_string}" with pattern "{promtime_to_isotime_pattern}"')
-        return datetime.fromisoformat(''.join(match.groups()))
+        grps = list(match.groups())
+        if grps[-1] == 'Z':
+            grps[-1] = '+00:00'
+        return datetime.fromisoformat(''.join(grps))
 
     def extract_alert_message(alert: typing.Dict[str, typing.Any]) -> typing.Tuple[str, str]:
         """Takes the alert object and returns (text, html) as a string tuple."""
