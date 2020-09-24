@@ -36,15 +36,18 @@ with open("config.yml", 'r') as ymlfile:
 def check_token(header_field: str):
     token = request.headers.get(header_field)
     if token != cfg['secret']:
+        print('check_token failed, because token did not match', file=sys.stderr, flush=True)
         abort(401)
 
 
 def get_a_room():
     if 'channel' not in request.args:
+        print('get_a_room failed, because channel was not in request args', file=sys.stderr, flush=True)
         abort(400)
     room = request.args.get('channel')
     # sanitize input
     if room_pattern.fullmatch(room) is None:
+        print('get_a_room failed, because channel', room, 'did not match room pattern', room_pattern, file=sys.stderr, flush=True)
         abort(400)
     return room
 
@@ -56,6 +59,7 @@ def get_msg_type():
     if msgtype in ["m.text", "m.notice"]:
         return msgtype
     else:
+        print('get_msg_type failed, because msgtype', msgtype, 'is not known', file=sys.stderr, flush=True)
         abort(400)
 
 
@@ -71,6 +75,9 @@ def shorten(string: str, max_len: int = 80, appendix: str = "..."):
 
 
 def matrix_error(error: MatrixRequestError):
+    print('matrix_error was called with', error, file=sys.stderr)
+    traceback.print_exception(MatrixRequestError, error, error.__traceback__)
+    print(file=sys.stderr, flush=True)
     # see Flask.make_response, this will be interpreted as (body, status)
     return f"Error from Matrix: {error.content}", error.code
 
@@ -190,6 +197,7 @@ def process_jenkins_request():
 def process_prometheus_request():
     secret = request.args.get('secret')
     if secret != cfg['secret']:
+        print('check_token failed, because token did not match', file=sys.stderr, flush=True)
         abort(401)
 
     msgtype = get_msg_type()
@@ -210,7 +218,8 @@ def process_prometheus_request():
     def parse_promtime(date_string):
         match = promtime_to_isotime_pattern.match(date_string)
         if match is None:
-            abort(400, f'could not parse promtime "{date_string}" with pattern "{promtime_to_isotime_pattern}"')
+            print('parse_promtime failed, because promtime', date_string, 'could not be parsed with pattern', promtime_to_isotime_pattern, file=sys.stderr, flush=True)
+            abort(400)
         grps = list(match.groups())
         if grps[-1] == 'Z':
             grps[-1] = '+00:00'
@@ -265,6 +274,7 @@ def process_prometheus_request():
     except (LookupError, ValueError, TypeError):
         print("Error parsing JSON and forming message:", file=sys.stderr)
         traceback.print_exc()
+        print(file=sys.stderr, flush=True)
         return "Error parsing JSON and forming message", 500
 
     try:
