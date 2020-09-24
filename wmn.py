@@ -18,7 +18,7 @@ room_pattern = re.compile(r'^[!#]\w+:[\w\-.]+$')
 
 # prometheus has to many sub-second digits in their timestamp,
 # so we get rid of nanoseconds here
-promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{6})?)(?:[0-9]{3})?(Z|[+-][0-9]{2}:[0-9]{2})')
+promtime_to_isotime_pattern = re.compile(r'([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\.[0-9]{6})?(?:[0-9]{3})?(Z|[+-][0-9]{2}:[0-9]{2})')
 
 """
 config.yml Example:
