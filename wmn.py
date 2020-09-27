@@ -10,7 +10,8 @@ from flask import Flask, request, abort
 from matrix_client.client import MatrixClient
 from matrix_client.errors import MatrixRequestError
 
-application = Flask(__name__)
+app = Flask(__name__)
+application = app
 
 # Not going to care for specifics like the underscore.
 # Generally match room alias or id [!#]anything:example.com with unicode support.
@@ -61,6 +62,10 @@ def get_msg_type():
     else:
         print('get_msg_type failed, because msgtype', msgtype, 'is not known', file=sys.stderr, flush=True)
         abort(400)
+
+
+def color_format_html(color_hex: str, text: str):
+    return f'<font color="#{color_hex}">{text}</font>'
 
 
 def iter_first_line(string: str):
@@ -203,6 +208,9 @@ def process_prometheus_request():
     msgtype = get_msg_type()
     room = get_a_room()
 
+    if not request.json:
+        abort(400)
+
     # written for version 4 of the alertmanager webhook JSON
     # https://prometheus.io/docs/alerting/configuration/#webhook_config
 
@@ -210,10 +218,13 @@ def process_prometheus_request():
         _status_colors = {"resolved": "34A91D", "firing": "EF2929"}
         if text is None:
             text = status
-        if status in _status_colors:
-            return f'<font color="#{_status_colors[status]}">{text}</font>'
-        else:
-            return text
+        return color_format_html(_status_colors.get(status, "FFFFFF"), text)
+
+    def color_severity_html(severity: str, text: typing.Optional[str] = None):
+        _severity_colors = {"warning": "EFAC29", "critical": "EF2929"}
+        if text is None:
+            text = severity
+        return color_format_html(_severity_colors.get(severity, "FFFFFF"), text)
 
     def parse_promtime(date_string):
         match = promtime_to_isotime_pattern.match(date_string)
@@ -225,63 +236,88 @@ def process_prometheus_request():
             grps[-1] = '+00:00'
         return datetime.fromisoformat(''.join(grps))
 
+    def alert_title(status: str, alertname: str, generator_url: str):
+        if alertname:
+            alertname = " alert " + alertname
+
+        if status:
+            status_msg = status.upper() if status == "firing" else status.title()
+            title = status_msg + alertname
+            html_title = color_status_html(status, title)
+        elif alertname:
+            title = alertname
+            html_title = title
+        else:
+            title = ""
+            html_title = title
+
+        if title:
+            title = f"*{title}*"
+            if generator_url:
+                title = f"{title} {generator_url}"
+
+        if html_title:
+            html_title = f"<strong>{html_title}</strong>"
+            if generator_url:
+                html_title = f'<a href="{generator_url}">{html_title}</a>'
+
+        return title, html_title
+
     def extract_alert_message(alert: typing.Dict[str, typing.Any]) -> typing.Tuple[str, str]:
         """Takes the alert object and returns (text, html) as a string tuple."""
 
-        alert_status = alert.get("status", "None")
-        alert_labels = str(alert.get("labels", None))
-        alert_annotations = str(alert.get("annotations", None))
-        alert_start = alert.get("startsAt", None)
-        alert_end = alert.get("endsAt", None)
+        labels = alert.get("labels", {})
+        severity = labels.get("severity", "")
+        annotations = alert.get("annotations", {})
+        description = annotations.get("description", "")
+        if not description:
+            description = annotations.get("summary", "")
+
         alert_daterange = []
-        if alert_start is not None and alert_end != '0001-01-01T00:00:00Z':
-            alert_start = parse_promtime(alert_start).strftime("%d. %b %y %H:%M %Z").rstrip()
-            alert_daterange.append(f'Started at {alert_start}')
-        if alert_end is not None and alert_end != '0001-01-01T00:00:00Z':
-            alert_end = parse_promtime(alert_end).strftime("%d. %b %y %H:%M %Z").rstrip()
-            alert_daterange.append(f'Ended at {alert_end}')
-        alert_daterange = "" if len(alert_daterange) == 0 else f'({", ".join(alert_daterange)})'
-        alert_generator_url = alert.get("generatorURL", "None")
+        if "startsAt" in alert and alert["startsAt"] != '0001-01-01T00:00:00Z':
+            alert_start = parse_promtime(alert["startsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
+            alert_daterange.append(f'started at {alert_start}')
+        if "endsAt" in alert and alert["endsAt"] != '0001-01-01T00:00:00Z':
+            alert_end = parse_promtime(alert["endsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
+            alert_daterange.append(f'ended at {alert_end}')
+        alert_daterange = ", ".join(alert_daterange)
 
-        return (
-            f'[{alert_status}] Labels: {alert_labels}, Annotations: {alert_annotations} - {alert_daterange} | Generator: {alert_generator_url}',
-            f'<strong>{color_status_html(alert_status)}</strong> Labels: {alert_labels}, Annotations: {alert_annotations} - {alert_daterange} | Generator: {alert_generator_url}',
+        title, html_title = alert_title(
+            status=alert.get("status", ""),
+            alertname=labels.get("alertname", ""),
+            generator_url=alert.get("generatorURL", "")
         )
+        if severity:
+            html_severity = f"Severity: {color_severity_html(severity)}"
+            severity = severity.upper() if severity == 'critical' else severity.title()
+            severity = f"Severity: {severity}"
+        else:
+            html_severity = ""
 
-    def extract_prometheus_message() -> typing.Tuple[str, str]:
-        """Dissects the request's JSON and returns (text, html) as a string tuple."""
-
-        group_key = request.json.get("groupKey", "None")
-        status = request.json.get("status", "None")
-        receiver = request.json.get("receiver", "None")
-        group_labels = str(request.json.get("groupLabels", None))
-        common_labels = str(request.json.get("commonLabels", None))
-        common_annotations = str(request.json.get("commonAnnotations", None))
-        ext_url = request.json.get("externalURL", "None")
-        alerts = request.json.get("alerts", [])  # type: typing.List[typing.Dict[str, typing.Any]]
-
-        text_alerts, html_alerts = zip(*map(extract_alert_message, alerts))
-        text_alerts = "\n" + "\n".join((f"- {msg}" for msg in text_alerts))
-        html_alerts = "<br>\n<ul>\n" + "\n".join((f"  <li>{msg}</li>" for msg in html_alerts)) + "\n</ul>"
-
+        html_parts = [html_title, html_severity, description, alert_daterange]
+        html_message = "</p>\n<p>".join(filter(bool, html_parts))
+        html_message = f"<p>{html_message}</p>" if html_message else ""
         return (
-            f'*{status.title()} alert for group {group_key}*\n  Receiver: {receiver}\n  Labels: {group_labels} | {common_labels}\n  Annotations: {common_annotations}\n  External URL: {ext_url}\nAlerts:{text_alerts}',
-            f'<strong>{color_status_html(status, f"{status.title()} alert for group {group_key}")}</strong><br>\n  <em>Receiver:</em> {receiver}<br>\n  <em>Labels:</em> {group_labels} | {common_labels}<br>\n  <em>Annotations:</em> {common_annotations}<br>\n  <em>External URL:</em> {ext_url}<br>\n<em>Alerts:</em>{html_alerts}',
+            " \n".join(filter(bool, [title, severity, description, alert_daterange])),
+            html_message
         )
-
-    try:
-        html, body = extract_prometheus_message()
-    except (LookupError, ValueError, TypeError):
-        print("Error parsing JSON and forming message:", file=sys.stderr)
-        traceback.print_exc()
-        print(file=sys.stderr, flush=True)
-        return "Error parsing JSON and forming message", 500
 
     try:
         client = MatrixClient(cfg["matrix"]["server"])
         client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
         room = client.join_room(room_id_or_alias=room)
-        room.send_html(html=html, body=body, msgtype=msgtype)
+        try:
+            for body, html in map(extract_alert_message, request.json.get("alerts", [])):
+                if html and body:
+                    room.send_html(html=html, body=body, msgtype=msgtype)
+                elif body:
+                    room.send_text(body)
+        except (LookupError, ValueError, TypeError):
+            room.send_text("Error parsing data in prometheus request")
+            print("Error parsing JSON and forming message:", file=sys.stderr)
+            traceback.print_exc()
+            print(file=sys.stderr, flush=True)
+            return "Error parsing JSON and forming message", 500
     except MatrixRequestError as e:
         return matrix_error(e)
 
@@ -289,7 +325,7 @@ def process_prometheus_request():
     return "", 204
 
 
-@application.route('/matrix', methods=("POST",))
+@app.route('/matrix', methods=("POST",))
 def notify():
     if 'X-Gitlab-Token' in request.headers:
         return process_gitlab_request()
