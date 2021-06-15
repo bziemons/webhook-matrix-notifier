@@ -286,15 +286,8 @@ def process_prometheus_request():
     def parse_promtime(date_string):
         match = promtime_to_isotime_pattern.match(date_string)
         if match is None:
-            print(
-                "parse_promtime failed, because promtime",
-                date_string,
-                "could not be parsed with pattern",
-                promtime_to_isotime_pattern,
-                file=sys.stderr,
-                flush=True,
-            )
-            abort(400)
+            # weirdly enough, they switched to ISO primetime
+            return datetime.fromisoformat(date_string)
         grps = list(filter(lambda x: x is not None, match.groups()))
         if grps[-1] == "Z":
             grps[-1] = "+00:00"
