@@ -1,6 +1,6 @@
 FROM alpine
 
-RUN apk add --no-cache uwsgi-python3 python3
+RUN apk add --no-cache uwsgi-python3 python3 py3-yaml py3-flask py3-matrix-nio
 
 # partly from https://hub.docker.com/_/python?tab=description#create-a-dockerfile-in-your-python-app-project
 WORKDIR /usr/src/wmn

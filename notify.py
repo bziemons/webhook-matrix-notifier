@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
+# Copyright 2019-2021 Benedikt Ziemons
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in
+# the Software without restriction, including without limitation the rights to
+# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+# the Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+# FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+# COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+# IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import argparse
+import asyncio
 import re
 import sys
 
+import nio
 import yaml
-from matrix_client.client import MatrixClient
+
+from wmn import client_login, resolve_room, send_message
 
 # Not going to care for specifics like the underscore.
 # Generally match !anything:example.com with unicode support.
 room_pattern = re.compile(r"^!\w+:[\w\-.]+$")
 
 
-def send_message(cfg, args):
-    client = MatrixClient(cfg["matrix"]["server"])
-    client.login(username=cfg["matrix"]["username"], password=cfg["matrix"]["password"])
-    room = client.join_room(room_id_or_alias=args.channel)
-
-    if "html" in args:
-        body = None if len(args.text) == 0 else str(args.text)
-        room.send_html(html=args.html, body=body, msgtype=args.type)
-    else:
-        room.client.api.send_message(
-            room_id=room.room_id, text_content=args.text, msgtype=args.type
-        )
-
-
-def main():
+async def main():
     """
     config.yml Example:
 
@@ -60,9 +67,23 @@ def main():
         print("ERROR: Couldn't parse channel as a matrix channel", file=sys.stderr)
         sys.exit(1)
 
-    send_message(cfg, args)
-    print("Message sent.", file=sys.stderr)
+    client = await client_login(cfg)
+    try:
+        room_id = await resolve_room(client=client, room=args.channel)
+        response = await client.join(room_id=room_id)
+        if isinstance(response, nio.ErrorResponse):
+            raise response
+
+        if "html" in args:
+            response = await send_message(client=client, room_id=room_id, text=(args.text or ""), msgtype=args.type, html=args.html)
+        else:
+            response = await send_message(client=client, room_id=room_id, text=args.text, msgtype=args.type)
+        print("Message sent.", file=sys.stderr, flush=True)
+    finally:
+        await client.close()
+    print(response.event_id)
 
 
 if __name__ == "__main__":
-    main()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())

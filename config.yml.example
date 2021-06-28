@@ -1,0 +1,15 @@
+# secret for other services to interact with this webhook
+secret: "…"
+
+matrix:
+  server: https://matrix.org
+  username: …
+
+  # optional
+  store_path: …
+  device_name: …
+  device_id: …  # will be filled automatically otherwise
+
+  # use password or token
+  password: "…"
+  token: …
