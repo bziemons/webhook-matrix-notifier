@@ -21,11 +21,11 @@ USER $WMN_UID
 
 ARG PORT=3031
 EXPOSE $PORT
+ENV UWSGI_SOCKET=:$PORT
 
 # opens a uwsgi socket at the given port, which is to be used by a reverse proxy
 CMD [ "uwsgi", "--die-on-term", \
                "--need-plugin", "python3", \
-               "--socket", "0.0.0.0:${PORT}", \
                "--wsgi-file", "/usr/src/wmn/wmn.py", \
                "--master", \
                "--processes", "1", \
