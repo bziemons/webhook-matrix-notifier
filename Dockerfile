@@ -1,7 +1,7 @@
 FROM docker.io/alpine:latest
 MAINTAINER Benedikt Ziemons <ben@rs485.network>
 
-RUN apk add --no-cache uwsgi-python3 python3 py3-yaml py3-flask py3-matrix-nio
+RUN apk add --no-cache uwsgi-python3 python3 py3-yaml py3-flask py3-matrix-nio py3-dateutil
 
 # partly from https://hub.docker.com/_/python?tab=description#create-a-dockerfile-in-your-python-app-project
 WORKDIR /usr/src/wmn

@@ -28,6 +28,7 @@ import nio
 import yaml
 from flask import Flask, request, abort
 from werkzeug.datastructures import MultiDict
+import dateutil.parser
 
 Cfg = Dict[str, Any]
 ErrorResponse = Tuple[str, int]
@@ -39,12 +40,6 @@ application = app
 # Not going to care for specifics like the underscore.
 # Generally match room alias or id [!#]anything:example.com with unicode support.
 room_pattern = re.compile(r"^[!#]\w+:[\w\-.]+$")
-
-# older prometheus/alertmanager versions send too many sub-second digits in their timestamp,
-# so we get rid of nanoseconds here
-promtime_to_isotime_pattern = re.compile(
-    r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\.[0-9]{6})?(?:[0-9]{3})?(Z|[+-][0-9]{2}:[0-9]{2})"
-)
 
 
 def load_configuration() -> Cfg:
@@ -380,16 +375,6 @@ async def process_prometheus_request():
             text = severity
         return color_format_html(_severity_colors.get(severity, "FFFFFF"), text)
 
-    def parse_promtime(date_string) -> datetime:
-        match = promtime_to_isotime_pattern.match(date_string)
-        if match is None:
-            # weirdly enough, they switched to ISO primetime
-            return datetime.fromisoformat(date_string)
-        grps = list(filter(lambda x: x is not None, match.groups()))
-        if grps[-1] == "Z":
-            grps[-1] = "+00:00"
-        return datetime.fromisoformat("".join(grps))
-
     def alert_title(status: str, alertname: str, generator_url: str):
         if alertname:
             alertname = " alert " + alertname
@@ -430,14 +415,12 @@ async def process_prometheus_request():
         alert_daterange = []
         if "startsAt" in alert and alert["startsAt"] != "0001-01-01T00:00:00Z":
             alert_start = (
-                parse_promtime(alert["startsAt"])
-                .strftime("%d. %b %y %H:%M %Z")
-                .rstrip()
+                dateutil.parser.isoparse(alert["startsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
             )
             alert_daterange.append(f"started at {alert_start}")
         if "endsAt" in alert and alert["endsAt"] != "0001-01-01T00:00:00Z":
             alert_end = (
-                parse_promtime(alert["endsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
+                dateutil.parser.isoparse(alert["endsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
             )
             alert_daterange.append(f"ended at {alert_end}")
         alert_daterange = ", ".join(alert_daterange)
