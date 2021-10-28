@@ -26,7 +26,7 @@ import sys
 import nio
 import yaml
 
-from wmn import client_login, resolve_room, send_message
+from common import client_login, send_message, resolve_room, MatrixException
 
 # Not going to care for specifics like the underscore.
 # Generally match !anything:example.com with unicode support.
@@ -72,12 +72,20 @@ async def main():
         room_id = await resolve_room(client=client, room=args.channel)
         response = await client.join(room_id=room_id)
         if isinstance(response, nio.ErrorResponse):
-            raise response
+            raise MatrixException(response)
 
         if "html" in args:
-            response = await send_message(client=client, room_id=room_id, text=(args.text or ""), msgtype=args.type, html=args.html)
+            response = await send_message(
+                client=client,
+                room_id=room_id,
+                text=(args.text or ""),
+                msgtype=args.type,
+                html=args.html,
+            )
         else:
-            response = await send_message(client=client, room_id=room_id, text=args.text, msgtype=args.type)
+            response = await send_message(
+                client=client, room_id=room_id, text=args.text, msgtype=args.type
+            )
         print("Message sent.", file=sys.stderr, flush=True)
     finally:
         await client.close()

@@ -25,13 +25,20 @@ from datetime import datetime
 from typing import Tuple, Optional, Dict, Any
 
 import nio
-import yaml
 from flask import Flask, request, abort
 from werkzeug.datastructures import MultiDict
 import dateutil.parser
 
-Cfg = Dict[str, Any]
-ErrorResponse = Tuple[str, int]
+from common import (
+    client_login,
+    send_message,
+    Cfg,
+    resolve_room,
+    format_response,
+    load_configuration,
+    MatrixException,
+)
+
 RequestArgs = MultiDict[str, str]
 
 app = Flask(__name__)
@@ -42,16 +49,6 @@ application = app
 room_pattern = re.compile(r"^[!#]\w+:[\w\-.]+$")
 
 
-def load_configuration() -> Cfg:
-    with open("config.yml", "r") as ymlfile:
-        return yaml.safe_load(ymlfile)
-
-
-def save_configuration(configuration: Cfg):
-    with open("config.yml", "w") as ymlfile:
-        yaml.safe_dump(configuration, ymlfile)
-
-
 def check_token(configuration: Cfg, token: str):
     if token != configuration["secret"]:
         print(
@@ -60,20 +57,6 @@ def check_token(configuration: Cfg, token: str):
             flush=True,
         )
         abort(401)
-
-
-async def resolve_room(client: nio.AsyncClient, room: str) -> str:
-    """Takes a room alias or room id and always returns a resolved room id."""
-
-    if room.startswith("#"):
-        response = await client.room_resolve_alias(room_alias=room)
-        if isinstance(response, nio.ErrorResponse):
-            abort(app.make_response(matrix_error(response)))
-        return response.room_id
-    elif room.startswith("!"):
-        return room
-    else:
-        raise RuntimeError(f"Room {room} could not be resolved")
 
 
 async def get_a_room(client: nio.AsyncClient, request_args: RequestArgs) -> str:
@@ -107,7 +90,10 @@ async def get_a_room(client: nio.AsyncClient, request_args: RequestArgs) -> str:
         )
         abort(400)
 
-    return await resolve_room(client=client, room=room)
+    try:
+        return await resolve_room(client=client, room=room)
+    except MatrixException as error:
+        abort(app.make_response(error.format_response()))
 
 
 def get_msg_type(request_args: RequestArgs):
@@ -142,62 +128,6 @@ def shorten(string: str, max_len: int = 80, appendix: str = "..."):
         return string
 
 
-async def client_login(configuration: Cfg) -> nio.AsyncClient:
-    client = nio.AsyncClient(
-        homeserver=configuration["matrix"].get("server"),
-        user=configuration["matrix"].get("username", ""),
-        device_id=configuration["matrix"].get("device_id", ""),
-        store_path=configuration["matrix"].get("store_path", ""),
-    )
-    response = await client.login(
-        password=configuration["matrix"].get("password", None),
-        device_name=configuration["matrix"].get("device_name", ""),
-        token=configuration["matrix"].get("token", None),
-    )
-    if isinstance(response, nio.ErrorResponse):
-        raise response
-
-    if "device_id" not in configuration["matrix"]:
-        configuration["matrix"]["device_id"] = response.device_id
-        save_configuration(configuration)
-    return client
-
-
-async def send_message(
-    client: nio.AsyncClient,
-    room_id: str,
-    text: str,
-    msgtype: str = "m.text",
-    html: Optional[str] = None
-) -> nio.RoomSendResponse:
-    content = {
-        "body": text,
-        "msgtype": msgtype,
-    }
-    if html is not None:
-        content["format"] = "org.matrix.custom.html"
-        content["formatted_body"] = html
-    response = await client.room_send(
-        room_id=room_id,
-        message_type="m.room.message",
-        content=content,
-        ignore_unverified_devices=True,
-    )
-    if isinstance(response, nio.ErrorResponse):
-        raise response
-    return response
-
-
-def matrix_error(error: nio.ErrorResponse) -> ErrorResponse:
-    print("matrix_error was called with", error, file=sys.stderr, flush=True)
-    # see Flask.make_response, this will be interpreted as (body, status)
-    if error.status_code:
-        status = int(error.status_code)
-    else:
-        status = 500
-    return f"Error from Matrix: {error.message}", status
-
-
 async def process_gitlab_request():
     cfg = load_configuration()
     check_token(configuration=cfg, token=request.headers.get("X-Gitlab-Token"))
@@ -205,8 +135,8 @@ async def process_gitlab_request():
 
     try:
         client = await client_login(cfg)
-    except nio.ErrorResponse as response:
-        return matrix_error(response)
+    except MatrixException as error:
+        return error.format_response()
 
     try:
         room_id = await get_a_room(client, request.args)
@@ -218,7 +148,7 @@ async def process_gitlab_request():
 
             response = await client.join(room_id=room_id)
             if isinstance(response, nio.ErrorResponse):
-                return matrix_error(response)
+                return format_response(response)
 
             def sort_commits_by_time(commits):
                 return sorted(commits, key=lambda commit: commit["timestamp"])
@@ -244,7 +174,10 @@ async def process_gitlab_request():
                 map(extract_commit_info, sort_commits_by_time(request.json["commits"]))
             )
             html_commits = "\n".join(
-                (f'  <li><a href="{url}">{msg}</a></li>' for (msg, url) in commit_messages)
+                (
+                    f'  <li><a href="{url}">{msg}</a></li>'
+                    for (msg, url) in commit_messages
+                )
             )
             text_commits = "\n".join(
                 (f"- [{msg}]({url})" for (msg, url) in commit_messages)
@@ -263,10 +196,10 @@ async def process_gitlab_request():
                 ignore_unverified_devices=True,
             )
             if isinstance(response, nio.ErrorResponse):
-                return matrix_error(response)
+                return format_response(response)
 
-    except nio.ErrorResponse as response:
-        abort(app.make_response(matrix_error(response)))
+    except MatrixException as error:
+        abort(app.make_response(error.format_response()))
     finally:
         await client.close()
 
@@ -281,8 +214,8 @@ async def process_jenkins_request():
 
     try:
         client = await client_login(cfg)
-    except nio.ErrorResponse as response:
-        return matrix_error(response)
+    except MatrixException as error:
+        return error.format_response()
 
     try:
         room_id = await get_a_room(client, request.args)
@@ -297,7 +230,9 @@ async def process_jenkins_request():
                     htimestamp = datetime.fromtimestamp(
                         change["timestamp"] / 1000
                     ).strftime("%d. %b %y %H:%M")
-                    bare_commit_link = f"({shorten(change['commitId'], 7, appendix='')})"
+                    bare_commit_link = (
+                        f"({shorten(change['commitId'], 7, appendix='')})"
+                    )
                     if project_url is not None and project_url:
                         commit_link = f"<a href=\"{project_url}commit/{change['commitId']}\">{bare_commit_link}</a>"
                     else:
@@ -350,8 +285,8 @@ async def process_jenkins_request():
                 ),
             )
 
-    except nio.ErrorResponse as response:
-        abort(app.make_response(matrix_error(response)))
+    except MatrixException as error:
+        abort(app.make_response(error.format_response()))
     finally:
         await client.close()
 
@@ -415,12 +350,16 @@ async def process_prometheus_request():
         alert_daterange = []
         if "startsAt" in alert and alert["startsAt"] != "0001-01-01T00:00:00Z":
             alert_start = (
-                dateutil.parser.isoparse(alert["startsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
+                dateutil.parser.isoparse(alert["startsAt"])
+                .strftime("%d. %b %y %H:%M %Z")
+                .rstrip()
             )
             alert_daterange.append(f"started at {alert_start}")
         if "endsAt" in alert and alert["endsAt"] != "0001-01-01T00:00:00Z":
             alert_end = (
-                dateutil.parser.isoparse(alert["endsAt"]).strftime("%d. %b %y %H:%M %Z").rstrip()
+                dateutil.parser.isoparse(alert["endsAt"])
+                .strftime("%d. %b %y %H:%M %Z")
+                .rstrip()
             )
             alert_daterange.append(f"ended at {alert_end}")
         alert_daterange = ", ".join(alert_daterange)
@@ -457,8 +396,8 @@ async def process_prometheus_request():
 
     try:
         client = await client_login(cfg)
-    except nio.ErrorResponse as response:
-        return matrix_error(response)
+    except MatrixException as error:
+        return error.format_response()
 
     try:
         msgtype = get_msg_type(request_args=request.args)
@@ -468,19 +407,33 @@ async def process_prometheus_request():
             abort(400)
 
         try:
-            for text, html in map(extract_alert_message, request.json.get("alerts", [])):
+            for text, html in map(
+                extract_alert_message, request.json.get("alerts", [])
+            ):
                 if html and text:
-                    await send_message(client=client, room_id=room_id, text=text, msgtype=msgtype, html=html)
+                    await send_message(
+                        client=client,
+                        room_id=room_id,
+                        text=text,
+                        msgtype=msgtype,
+                        html=html,
+                    )
                 elif text:
-                    await send_message(client=client, room_id=room_id, text=text, msgtype=msgtype)
+                    await send_message(
+                        client=client, room_id=room_id, text=text, msgtype=msgtype
+                    )
         except (LookupError, ValueError, TypeError):
-            await send_message(client=client, room_id=room_id, text="Error parsing data in prometheus request")
+            await send_message(
+                client=client,
+                room_id=room_id,
+                text="Error parsing data in prometheus request",
+            )
             print("Error parsing JSON and forming message:", file=sys.stderr)
             traceback.print_exc()
             print(file=sys.stderr, flush=True)
             return "Error parsing JSON and forming message", 500
-    except nio.ErrorResponse as response:
-        abort(app.make_response(matrix_error(response)))
+    except MatrixException as error:
+        abort(app.make_response(error.format_response()))
     finally:
         await client.close()
 
