@@ -24,9 +24,14 @@ import re
 import sys
 
 import nio
-import yaml
 
-from common import client_login, send_message, resolve_room, MatrixException
+from .common import (
+    client_login,
+    send_message,
+    resolve_room,
+    MatrixException,
+    load_configuration,
+)
 
 # Not going to care for specifics like the underscore.
 # Generally match !anything:example.com with unicode support.
@@ -42,8 +47,7 @@ async def main():
       username: ...
       password: "..."
     """
-    with open("config.yml", "r") as ymlfile:
-        cfg = yaml.safe_load(ymlfile)
+    cfg = load_configuration()
 
     parser = argparse.ArgumentParser(description="Notify a matrix channel.")
     parser.add_argument(

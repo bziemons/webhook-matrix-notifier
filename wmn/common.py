@@ -16,7 +16,8 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+import os
+import pathlib
 import sys
 from typing import Optional, Dict, Any, Tuple
 
@@ -49,13 +50,22 @@ class MatrixException(Exception):
         return format_response(self.response)
 
 
+def config_path() -> pathlib.Path:
+    path = os.environ.get("WMN_CONFIG_PATH", "./config.yml")
+    path = pathlib.Path(path)
+    path = path.absolute().resolve()
+    if not path.exists():
+        raise RuntimeError("Cannot find config: " + path)
+    return path
+
+
 def load_configuration() -> Cfg:
-    with open("config.yml", "r") as ymlfile:
+    with open(str(config_path()), "r") as ymlfile:
         return yaml.safe_load(ymlfile)
 
 
 def save_configuration(configuration: Cfg):
-    with open("config.yml", "w") as ymlfile:
+    with open(str(config_path()), "w") as ymlfile:
         yaml.safe_dump(configuration, ymlfile)
 
 
