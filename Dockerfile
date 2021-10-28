@@ -1,7 +1,10 @@
 FROM docker.io/alpine:latest
 MAINTAINER Benedikt Ziemons <ben@rs485.network>
 
-RUN apk add --no-cache uwsgi-python3 python3 py3-yaml py3-flask py3-matrix-nio py3-dateutil
+RUN apk add --no-cache uwsgi-python3 python3 py3-yaml py3-pip py3-setuptools py3-matrix-nio py3-dateutil && \
+    pip install -U pip && \
+    pip install -U setuptools && \
+    pip install -U Flask[async]
 
 # copy required source files
 COPY wmn/ /usr/local/lib/wmn/wmn
