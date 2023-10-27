@@ -18,9 +18,8 @@
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import json
+import logging
 import re
-import sys
-import traceback
 from datetime import datetime
 from typing import Tuple, Optional, Dict, Any
 
@@ -41,8 +40,10 @@ from .common import (
 
 RequestArgs = MultiDict[str, str]
 
-app = Flask(__name__)
-application = app
+logging.basicConfig()
+
+# application is the wsgi variable name
+application = Flask(__name__)
 
 # Not going to care for specifics like the underscore.
 # Generally match room alias or id [!#]anything:example.com with unicode support.
@@ -51,49 +52,31 @@ room_pattern = re.compile(r"^[!#]\w+:[\w\-.]+$")
 
 def check_token(configuration: Cfg, token: str):
     if token != configuration["secret"]:
-        print(
-            "check_token failed, because token did not match",
-            file=sys.stderr,
-            flush=True,
-        )
+        logging.warning("request denied (401): check_token failed, because token did not match")
         abort(401)
 
 
 async def get_a_room(client: nio.AsyncClient, request_args: RequestArgs) -> str:
     """Takes a nio.AsyncClient and the request args to return a room id."""
 
-    if "channel" not in request_args:
-        print(
-            "get_a_room failed, because channel was not in request args",
-            file=sys.stderr,
-            flush=True,
-        )
+    if "channel" not in request_args and "room" not in request_args:
+        logging.warning("request denied (400): get_a_room failed, because room was not in request args")
         abort(400)
-    room = request_args.get("channel")
+    room = request_args.get("channel", "")
+    room = request_args.get("room", room)
     if not room:
-        print(
-            "get_a_room failed, because channel was empty",
-            file=sys.stderr,
-            flush=True,
-        )
+        logging.warning("request denied (400): get_a_room failed, because room was empty")
         abort(400)
 
     # sanitize input
     if room_pattern.fullmatch(room) is None:
-        print(
-            "get_a_room failed, because channel",
-            room,
-            "did not match room pattern",
-            room_pattern,
-            file=sys.stderr,
-            flush=True,
-        )
+        logging.warning("request denied (400): get_a_room failed, because room '%s' did not match room pattern '%s'", room, room_pattern)
         abort(400)
 
     try:
         return await resolve_room(client=client, room=room)
     except MatrixException as error:
-        abort(app.make_response(error.format_response()))
+        abort(application.make_response(error.format_response()))
 
 
 def get_msg_type(request_args: RequestArgs):
@@ -103,13 +86,7 @@ def get_msg_type(request_args: RequestArgs):
     if msgtype in ["m.text", "m.notice"]:
         return msgtype
     else:
-        print(
-            "get_msg_type failed, because msgtype",
-            msgtype,
-            "is not known",
-            file=sys.stderr,
-            flush=True,
-        )
+        logging.warning("request denied (400): get_msg_type failed, because msgtype '%s' is not known", msgtype)
         abort(400)
 
 
@@ -199,7 +176,7 @@ async def process_gitlab_request():
                 return format_response(response)
 
     except MatrixException as error:
-        abort(app.make_response(error.format_response()))
+        abort(application.make_response(error.format_response()))
     finally:
         await client.close()
 
@@ -286,7 +263,7 @@ async def process_jenkins_request():
             )
 
     except MatrixException as error:
-        abort(app.make_response(error.format_response()))
+        abort(application.make_response(error.format_response()))
     finally:
         await client.close()
 
@@ -387,11 +364,7 @@ async def process_prometheus_request():
     cfg = load_configuration()
     secret = request.args.get("secret")
     if secret != cfg["secret"]:
-        print(
-            "check_token failed, because token did not match",
-            file=sys.stderr,
-            flush=True,
-        )
+        logging.warning("check_token failed, because token did not match")
         abort(401)
 
     try:
@@ -428,12 +401,10 @@ async def process_prometheus_request():
                 room_id=room_id,
                 text="Error parsing data in prometheus request",
             )
-            print("Error parsing JSON and forming message:", file=sys.stderr)
-            traceback.print_exc()
-            print(file=sys.stderr, flush=True)
+            logging.exception("Error parsing JSON and forming message")
             return "Error parsing JSON and forming message", 500
     except MatrixException as error:
-        abort(app.make_response(error.format_response()))
+        abort(application.make_response(error.format_response()))
     finally:
         await client.close()
 
@@ -441,7 +412,7 @@ async def process_prometheus_request():
     return "", 204
 
 
-@app.post("/matrix")
+@application.post("/matrix")
 async def notify():
     if "X-Gitlab-Token" in request.headers:
         return await process_gitlab_request()

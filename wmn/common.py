@@ -16,9 +16,10 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+import logging
 import os
 import pathlib
-import sys
 from typing import Optional, Dict, Any, Tuple
 
 import nio
@@ -28,17 +29,17 @@ Cfg = Dict[str, Any]
 ErrorResponseTuple = Tuple[str, int]
 
 
-def format_response(error: "nio.ErrorResponse") -> ErrorResponseTuple:
+def format_response(error_response: "nio.ErrorResponse") -> ErrorResponseTuple:
     """
     :returns: tuple to be interpreted as (body, status), see Flask.make_response
     :rtype: ErrorResponseTuple
     """
-    print("matrix_error was called with", error, file=sys.stderr, flush=True)
-    if error.status_code:
-        status = int(error.status_code)
+    logging.warning("format_response was called with error %s", error_response)
+    if error_response.status_code:
+        status = int(error_response.status_code)
     else:
         status = 500
-    return f"Error from Matrix: {error.message}", status
+    return f"Error from Matrix: {error_response.message}", status
 
 
 class MatrixException(Exception):
@@ -71,10 +72,10 @@ def save_configuration(configuration: Cfg):
 
 async def client_login(configuration: Cfg) -> nio.AsyncClient:
     """
-    :exception MatrixException: if the matrix server returns an error.
+    :exception MatrixException: if the Matrix server returns an error.
     :param configuration: the configuration object to load login data from.
     :type configuration: Cfg
-    :return: the matrix client.
+    :return: the Matrix client.
     :rtype: nio.AsyncClient
     """
     client = nio.AsyncClient(
@@ -105,7 +106,7 @@ async def send_message(
     html: Optional[str] = None,
 ) -> nio.RoomSendResponse:
     """
-    :exception MatrixException: if the matrix server returns an error.
+    :exception MatrixException: if the Matrix server returns an error.
     :param client: the client to operate on.
     :param room_id: the room to send the message to.
     :param text: the text to send.
@@ -135,11 +136,11 @@ async def send_message(
 async def resolve_room(client: nio.AsyncClient, room: str) -> str:
     """
     Takes a room alias or room id and always returns a resolved room id.
-    :exception MatrixException: if the matrix server returns an error.
+    :exception MatrixException: if the Matrix server returns an error.
     :exception RuntimeError: if the passed room string cannot be handled.
     :param client: the client to operate on.
     :param room: the room to resolve.
-    :returns: the room's matrix id, starting with a "!".
+    :returns: the room's Matrix id, starting with a "!".
     :rtype: str
     """
 

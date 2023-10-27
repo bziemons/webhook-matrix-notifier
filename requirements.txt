@@ -1,4 +1,0 @@
-PyYAML>=5.1,<6
-flask[async]>=2.0.0,<3
-matrix-nio[e2e]>=0.18.0,<1
-python-dateutil~=2.8.2

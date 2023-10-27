@@ -20,6 +20,7 @@
 
 import argparse
 import asyncio
+import logging
 import re
 import sys
 
@@ -47,11 +48,15 @@ async def main():
       username: ...
       password: "..."
     """
+    logging.basicConfig()
     cfg = load_configuration()
 
-    parser = argparse.ArgumentParser(description="Notify a matrix channel.")
+    parser = argparse.ArgumentParser(description="Notify a Matrix room.")
     parser.add_argument(
-        "-c", "--channel", required=True, help="the channel to send the message to"
+        "-c", "--channel", required=False, help="the channel to send the message to (deprecated, use --room)"
+    )
+    parser.add_argument(
+        "-r", "--room", required=False, help="the Matrix room to send the message to"
     )
     parser.add_argument(
         "-t",
@@ -61,19 +66,27 @@ async def main():
         choices=("m.text", "m.notice"),
         default="m.text",
     )
-    parser.add_argument("text", help="the text message to send to the channel")
+    parser.add_argument("text", help="the text message to send to the room")
     parser.add_argument(
-        "html", nargs="?", help="the html message to send to the channel"
+        "html", nargs="?", help="the html message to send to the room"
     )
     args = parser.parse_args()
 
-    if room_pattern.fullmatch(args.channel) is None:
-        print("ERROR: Couldn't parse channel as a matrix channel", file=sys.stderr)
+    if not args.channel and not args.room:
+        logging.error("Specify the Matrix room to send the message to")
+        sys.exit(1)
+    if args.room:
+        room = args.room
+    else:
+        room = args.channel
+
+    if room_pattern.fullmatch(room) is None:
+        logging.error("Could not parse Matrix room '%s'", room)
         sys.exit(1)
 
     client = await client_login(cfg)
     try:
-        room_id = await resolve_room(client=client, room=args.channel)
+        room_id = await resolve_room(client=client, room=room)
         response = await client.join(room_id=room_id)
         if isinstance(response, nio.ErrorResponse):
             raise MatrixException(response)
@@ -90,10 +103,9 @@ async def main():
             response = await send_message(
                 client=client, room_id=room_id, text=args.text, msgtype=args.type
             )
-        print("Message sent.", file=sys.stderr, flush=True)
     finally:
         await client.close()
-    print(response.event_id)
+    logging.info("Message sent. %s", response.event_id)
 
 
 if __name__ == "__main__":
