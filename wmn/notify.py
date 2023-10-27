@@ -39,39 +39,7 @@ from .common import (
 room_pattern = re.compile(r"^!\w+:[\w\-.]+$")
 
 
-async def main():
-    """
-    config.yml Example:
-
-    matrix:
-      server: https://matrix.org
-      username: ...
-      password: "..."
-    """
-    logging.basicConfig()
-    cfg = load_configuration()
-
-    parser = argparse.ArgumentParser(description="Notify a Matrix room.")
-    parser.add_argument(
-        "-c", "--channel", required=False, help="the channel to send the message to (deprecated, use --room)"
-    )
-    parser.add_argument(
-        "-r", "--room", required=False, help="the Matrix room to send the message to"
-    )
-    parser.add_argument(
-        "-t",
-        "--type",
-        required=False,
-        help="the msgtype",
-        choices=("m.text", "m.notice"),
-        default="m.text",
-    )
-    parser.add_argument("text", help="the text message to send to the room")
-    parser.add_argument(
-        "html", nargs="?", help="the html message to send to the room"
-    )
-    args = parser.parse_args()
-
+def get_a_room(args):
     if not args.channel and not args.room:
         logging.error("Specify the Matrix room to send the message to")
         sys.exit(1)
@@ -83,8 +51,13 @@ async def main():
     if room_pattern.fullmatch(room) is None:
         logging.error("Could not parse Matrix room '%s'", room)
         sys.exit(1)
+    return room
 
+
+async def login_and_send(args):
+    cfg = load_configuration()
     client = await client_login(cfg)
+    room = get_a_room(args)
     try:
         room_id = await resolve_room(client=client, room=room)
         response = await client.join(room_id=room_id)
@@ -108,6 +81,45 @@ async def main():
     logging.info("Message sent. %s", response.event_id)
 
 
-if __name__ == "__main__":
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Notify a Matrix room.")
+    parser.add_argument(
+        "-c", "--channel", required=False, help="the channel to send the message to (deprecated, use --room)"
+    )
+    parser.add_argument(
+        "-r", "--room", required=False, help="the Matrix room to send the message to"
+    )
+    parser.add_argument(
+        "-t",
+        "--type",
+        required=False,
+        help="the msgtype",
+        choices=("m.text", "m.notice"),
+        default="m.text",
+    )
+    parser.add_argument("text", help="the text message to send to the room")
+    parser.add_argument(
+        "html", nargs="?", help="the html message to send to the room"
+    )
+    return parser.parse_args()
+
+
+def main():
+    """
+    Config path is local config.yml by default. Specify with environment variable WMN_CONFIG_PATH.
+
+    config.yml Example:
+
+    matrix:
+      server: https://matrix.org
+      username: ...
+      password: "..."
+    """
+    logging.basicConfig()
+    args = parse_arguments()
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    loop.run_until_complete(login_and_send(args))
+
+
+if __name__ == "__main__":
+    main()

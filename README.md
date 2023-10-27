@@ -6,7 +6,18 @@ Listens to HTTP only. Should be used behind a reverse-proxy with HTTPS.
 An example configuration is at `config.yml.example` and the program always reads the configuration file `config.yml`.
 
 
-## Testing the Hook locally
+## Running the command line notifier
+
+To notify a room with a simple text message, ensure credentials are filled out in your local config.yml and run
+
+```
+python -m wmn.notify -r '!room:matrix.org' simple text message
+```
+
+Installing the webhook-matrix-notifier will create the shorthand script "matrix-notify" for this.
+
+
+## Testing the webhook application locally
 
 First, start the webserver locally by `env FLASK_APP=wmn.py flask run` or have your IDE start it for you. \
 Then, send a POST request using curl.

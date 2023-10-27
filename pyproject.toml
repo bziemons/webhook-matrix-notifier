@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webhook_matrix_notifier"
+authors = [
+    {name = "Benedikt Ziemons", email = "ben@rs485.network"},
+]
+description = "Flask webhook application for matrix notification and command-line matrix notification tool"
+version = "1.1"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+dependencies = [
+    "pyyaml",
+    "flask[async]",
+    "matrix-nio[e2e]",
+    "python-dateutil",
+]
+
+[project.scripts]
+matrix-notify = "wmn.notify:main"
