@@ -3,15 +3,20 @@
 Takes notifications via webhook, checks a secret and notifies a [Matrix](https://matrix.org) room.
 Listens to HTTP only. Should be used behind a reverse-proxy with HTTPS.
 
-An example configuration is at `config.yml.example` and the program always reads the configuration file `config.yml`.
+
+## Configuration
+
+An example configuration is located at `config.yml.example`.
+By default the file `config.yml` in the current working directory will be used as the configuration.
+To specify a different configuration file, use the environment variable `WMN_CONFIG_PATH`.
 
 
 ## Running the command line notifier
 
-To notify a room with a simple text message, ensure credentials are filled out in your local config.yml and run
+To notify a room with a simple text message, ensure credentials are filled out in your configuration file and run
 
 ```
-python -m wmn.notify -r '!room:matrix.org' simple text message
+python -m wmn.notify -r '!room:matrix.org' "text" "html"
 ```
 
 Installing the webhook-matrix-notifier will create the shorthand script "matrix-notify" for this.
@@ -29,7 +34,7 @@ export URLQUOTED_ROOM=`python3 -c 'from urllib.parse import quote_plus; print(qu
 curl -i -X POST "http://localhost:5000/matrix?room=${URLQUOTED_ROOM}" -H "X-Gitlab-Event: Push Hook" -H "X-Gitlab-Token: 123" -H "Content-Type: application/json" --data-binary @./testrequest_gitlab.json
 ```
 
-The `X-Gitlab-Token` must correspond to the secret provided in `config.yml`
+The `X-Gitlab-Token` must correspond to the secret provided in the configuration.
 
 ### Prometheus
 
@@ -39,4 +44,5 @@ export URLQUOTED_SECRET=`python3 -c 'from urllib.parse import quote_plus; print(
 curl -i -X POST "http://localhost:5000/matrix?type=prometheus&secret=${URLQUOTED_SECRET}&room=${URLQUOTED_ROOM}" -H "Content-Type: application/json" --data-binary @./testrequest_prometheus.json
 ```
 
-The secret must be passed as a URI parameter here.
+The secret must be passed as a URI parameter.
+
